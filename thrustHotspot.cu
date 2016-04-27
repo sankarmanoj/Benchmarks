@@ -9,6 +9,7 @@
  #include <thrust/fill.h>
  #include <thrust/replace.h>
  #include <thrust/functional.h>
+ #include <thrust/sort.h>
  #include <iostream>
 
 #ifdef RD_WG_SIZE_0_0
@@ -230,7 +231,7 @@ int compute_tran_temp(float *MatrixPower,float *MatrixTemp[2], int col, int row,
 {
         dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
         dim3 dimGrid(blockCols, blockRows);
-
+  printf("Number of Threads = %d \n",BLOCK_SIZE*BLOCK_SIZE*blockCols*blockRows);
 	float grid_height = chip_height / row;
 	float grid_width = chip_width / col;
 
@@ -256,7 +257,15 @@ int compute_tran_temp(float *MatrixPower,float *MatrixTemp[2], int col, int row,
 	}
         return dst;
 }
+class hotspotFunctor
+{
+public:
+__device__ float operator() (float x,int y)
+{
+  return y;
+}
 
+};
 int thrustCompute(thrust::device_vector<float> MatrixPower,thrust::device_vector<float> MatrixTemp[2], int col, int row, \
 		int total_iterations, int num_iterations, int blockCols, int blockRows, int borderCols, int borderRows)
 {
@@ -284,6 +293,25 @@ int thrustCompute(thrust::device_vector<float> MatrixPower,thrust::device_vector
             src = dst;
             dst = temp;
             int requiredIterations = MIN(num_iterations,total_iterations-t);
+            int small_block_rows = BLOCK_SIZE-requiredIterations*2;//EXPAND_RATE
+            int small_block_cols = BLOCK_SIZE-requiredIterations*2;//EXPAND_RATE
+            float amb_temp = 80.0;
+            float step_div_Cap;
+            float Rx_1,Ry_1,Rz_1;
+
+            //Generate id using counting iterator
+            // int bx = blockIdx.x;
+            // int by = blockIdx.y;
+            //
+            // int tx=threadIdx.x;
+            // int ty=threadIdx.y;
+
+            step_div_Cap=step/Cap;
+
+            Rx_1=1/Rx;
+            Ry_1=1/Ry;
+            Rz_1=1/Rz;
+
           //  calculate_temp<<<dimGrid, dimBlock>>>(MIN(num_iterations, total_iterations-t), MatrixPower,MatrixTemp[src],MatrixTemp[dst],\
 		col,row,borderCols, borderRows, Cap,Rx,Ry,Rz,step,time_elapsed);
 	}
@@ -369,22 +397,28 @@ void run(int argc, char** argv)
     cudaMemcpy(MatrixTemp[0], FilesavingTemp, sizeof(float)*size, cudaMemcpyHostToDevice);
     MatrixTemperature[0].assign(FilesavingTemp,FilesavingTemp+size);
     cudaMalloc((void**)&MatrixPower, sizeof(float)*size);
-    thrust::device_vector<float>MatrixPowerVector (size);
+
+    thrust::host_vector<float>HostMatrixPowerVector (FilesavingPower,FilesavingPower+size);
+    thrust::device_vector<float>DeviceMatrixPowerVector = HostMatrixPowerVector;
     cudaMemcpy(MatrixPower, FilesavingPower, sizeof(float)*size, cudaMemcpyHostToDevice);
-    MatrixPowerVector.assign(FilesavingPower,FilesavingPower+size);
+
     printf("Start computing the transient temperature\n");
     int ret = compute_tran_temp(MatrixPower,MatrixTemp,grid_cols,grid_rows, \
 	 total_iterations,pyramid_height, blockCols, blockRows, borderCols, borderRows);
-	printf("Ending simulation\n");
+	 printf("Ending simulation\n");
+
     cudaMemcpy(MatrixOut, MatrixTemp[ret], sizeof(float)*size, cudaMemcpyDeviceToHost);
     thrust::host_vector<float> MatrixOutput(size);
     thrust::device_vector<float> resultMatrix(size);
     resultMatrix.assign(MatrixTemp[ret],MatrixTemp[ret]+size);
-    MatrixOutput=resultMatrix;
+    thrust::device_vector<float> bobby (size);
+    thrust::counting_iterator<int> myCount(0);
+    thrust::transform(resultMatrix.begin(),resultMatrix.end(),myCount,bobby.begin(),hotspotFunctor());
+    MatrixOutput=bobby;
     writeoutput(MatrixOutput,grid_rows, grid_cols, ofile);
-
+    //
     cudaFree(MatrixPower);
     cudaFree(MatrixTemp[0]);
     cudaFree(MatrixTemp[1]);
-  //  free(MatrixOut);
+   free(MatrixOut);
 }

@@ -5,14 +5,14 @@ CC := nvcc
 INCLUDE := $(CUDA_DIR)/include
 
 SRC = hotspot.cu
-
+TSRC = thrustHotspot.cu
 EXE = hotspot
-
-run: release
+TEXE = thotspot
+run: $(EXE)
 	./$(EXE) 64 2 2 temp	power result.out
 	openssl md5 result.out
 
-release: $(SRC)
+$(EXE): $(SRC)
 	$(CC) $(KERNEL_DIM) $(SRC) -o $(EXE) -I$(INCLUDE)
 
 enum: $(SRC)
@@ -27,8 +27,8 @@ debugenum: $(SRC)
 clean: $(SRC)
 	rm -f $(EXE) $(EXE).linkinfo result.txt
 
-trun: trelease
-		./$(EXE) 64 2 2 temp	power result.out
+trun: $(TEXE)
+		./$(TEXE) 64 2 2 temp	power result.out
 		openssl md5 result.out
-trelease: $(SRC)
-	$(CC) $(KERNEL_DIM) thrustHotspot.cu -o $(EXE) -I$(INCLUDE)
+$(TEXE): $(TSRC)
+	$(CC) $(KERNEL_DIM) $(TSRC) -o $(TEXE) -I$(INCLUDE)
